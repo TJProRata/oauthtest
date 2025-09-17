@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { createClient } from '@/lib/supabase-client'
+import { useRouter } from 'next/navigation'
 
 const OAUTH_PLATFORMS = [
   {
@@ -47,20 +49,77 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
+  const router = useRouter()
+  const supabase = createClient()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setError('')
 
-    // Simulate login - redirect to dashboard
-    setTimeout(() => {
-      window.location.href = '/dashboard'
-    }, 1000)
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (error) {
+        setError(error.message)
+        return
+      }
+
+      if (data.user) {
+        router.push('/dashboard')
+      }
+    } catch (err) {
+      setError('An unexpected error occurred')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleOAuthConnect = (platform: string) => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
-    window.location.href = `${apiUrl}/oauth/${platform.toLowerCase()}/authorize`
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+    setError('')
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      })
+
+      if (error) {
+        setError(error.message)
+        return
+      }
+
+      if (data.user) {
+        setError('Check your email for confirmation link')
+      }
+    } catch (err) {
+      setError('An unexpected error occurred')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleOAuthConnect = async (platform: string) => {
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        setError('Please sign in first to connect your accounts')
+        return
+      }
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+      window.location.href = `${apiUrl}/oauth/${platform.toLowerCase()}/authorize?user_id=${user.id}`
+    } catch (err) {
+      setError('Unable to connect platform. Please try again.')
+    }
   }
 
   return (
@@ -130,19 +189,29 @@ export default function LoginPage() {
                       </button>
                     </div>
                   </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? (
-                      <>
-                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                        Signing in...
-                      </>
-                    ) : (
-                      <>
-                        Sign In
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
+                  {error && (
+                    <div className="rounded-md bg-red-50 border border-red-200 p-3">
+                      <p className="text-sm text-red-800">{error}</p>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Button type="submit" className="flex-1" disabled={isLoading}>
+                      {isLoading ? (
+                        <>
+                          <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
+                          Signing in...
+                        </>
+                      ) : (
+                        <>
+                          Sign In
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </>
+                      )}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={handleSignUp} disabled={isLoading} className="flex-1">
+                      Sign Up
+                    </Button>
+                  </div>
                 </form>
 
                 <div className="relative">

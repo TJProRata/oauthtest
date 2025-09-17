@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Sparkles, LayoutDashboard, Link2, Settings, BarChart3, FileText, Bell, User, LogOut, Plus, CheckCircle2, Clock, AlertCircle, Zap } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { PlatformCard } from '@/components/platform/PlatformCard'
 import { OAuthPlatform } from '@creator-ai-hub/shared'
+import { createClient } from '@/lib/supabase-client'
+import { useRouter } from 'next/navigation'
 
 const PLATFORMS: {
   id: OAuthPlatform;
@@ -30,9 +32,7 @@ const PLATFORMS: {
       'Comments & Direct Messages',
       'Analytics & Insights',
       'Audience Demographics'
-    ],
-    isConnected: true,
-    lastSynced: new Date(Date.now() - 1000 * 60 * 30) // 30 minutes ago
+    ]
   },
   {
     id: 'youtube',
@@ -45,8 +45,7 @@ const PLATFORMS: {
       'Channel Statistics',
       'Comments & Community',
       'Playlists & Analytics'
-    ],
-    isConnected: false
+    ]
   },
   {
     id: 'twitter',
@@ -59,9 +58,7 @@ const PLATFORMS: {
       'Profile & Followers',
       'Engagement Metrics',
       'Trending Topics'
-    ],
-    isConnected: true,
-    lastSynced: new Date(Date.now() - 1000 * 60 * 60 * 2) // 2 hours ago
+    ]
   },
   {
     id: 'shopify',
@@ -74,8 +71,7 @@ const PLATFORMS: {
       'Real-time Inventory',
       'Order History',
       'Customer Reviews'
-    ],
-    isConnected: false
+    ]
   },
   {
     id: 'google_calendar',
@@ -88,9 +84,7 @@ const PLATFORMS: {
       'Free/Busy Status',
       'Event Details',
       'Multiple Calendars'
-    ],
-    isConnected: true,
-    lastSynced: new Date(Date.now() - 1000 * 60 * 15) // 15 minutes ago
+    ]
   },
   {
     id: 'calendly',
@@ -103,8 +97,7 @@ const PLATFORMS: {
       'Available Slots',
       'Appointment Details',
       'Event Types'
-    ],
-    isConnected: false
+    ]
   }
 ]
 
@@ -117,23 +110,149 @@ const SIDEBAR_ITEMS = [
 ]
 
 export default function DashboardPage() {
-  const [connections, setConnections] = useState<Record<OAuthPlatform, boolean>>({
-    instagram: true,
-    youtube: false,
-    twitter: true,
-    shopify: false,
-    google_calendar: true,
-    calendly: false
+  const router = useRouter()
+  const [user, setUser] = useState<any>(null)
+  const [connections, setConnections] = useState<Record<OAuthPlatform, any>>({
+    instagram: null,
+    youtube: null,
+    twitter: null,
+    shopify: null,
+    google_calendar: null,
+    calendly: null
   })
+  const [loading, setLoading] = useState(true)
+
+  // Get authenticated user on mount and load connections
+  useEffect(() => {
+    const supabase = createClient()
+
+    // Get current user
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) {
+        router.push('/login')
+        return
+      }
+      setUser(user)
+
+      // Load connections for this user
+      loadConnections(user.id)
+    })
+
+    // Subscribe to auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        router.push('/login')
+      } else if (session?.user) {
+        setUser(session.user)
+        loadConnections(session.user.id)
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [router])
+
+  // Load connections from API
+  const loadConnections = async (userId: string) => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+      const response = await fetch(`${apiUrl}/api/connections?user_id=${userId}`)
+      const result = await response.json()
+
+      if (result.success && result.data) {
+        // Create a map of platform to connection data
+        const connectionsMap: Record<string, any> = {}
+        result.data.forEach((conn: any) => {
+          connectionsMap[conn.platform] = conn
+        })
+
+        // Update connections state with real data
+        setConnections({
+          instagram: connectionsMap.instagram || null,
+          youtube: connectionsMap.youtube || null,
+          twitter: connectionsMap.twitter || null,
+          shopify: connectionsMap.shopify || null,
+          google_calendar: connectionsMap.google_calendar || null,
+          calendly: connectionsMap.calendly || null
+        })
+      }
+    } catch (error) {
+      console.error('Failed to load connections:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Check for OAuth callback parameters
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const connected = params.get('connected')
+    const error = params.get('error')
+
+    if (connected) {
+      // Show success message and reload connections
+      console.log(`Successfully connected ${connected}`)
+      if (user) {
+        loadConnections(user.id)
+      }
+      // Clean up URL
+      window.history.replaceState({}, '', '/dashboard')
+    } else if (error) {
+      // Show error message
+      console.error(`OAuth error: ${error}`)
+      alert(`Failed to connect: ${error}`)
+      // Clean up URL
+      window.history.replaceState({}, '', '/dashboard')
+    }
+  }, [user])
 
   const handleConnect = async (platform: OAuthPlatform) => {
+    if (!user) {
+      alert('Please log in first')
+      return
+    }
+
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
-    window.location.href = `${apiUrl}/oauth/${platform}/authorize`
+
+    // Special handling for Shopify - needs shop parameter
+    if (platform === 'shopify') {
+      const shop = prompt('Enter your Shopify shop domain (e.g., my-store):')
+      if (!shop) return
+      window.location.href = `${apiUrl}/oauth/${platform}/authorize?user_id=${user.id}&shop=${shop}`
+    } else {
+      window.location.href = `${apiUrl}/oauth/${platform}/authorize?user_id=${user.id}`
+    }
   }
 
   const handleDisconnect = async (platform: OAuthPlatform) => {
-    console.log('Disconnecting', platform)
-    setConnections(prev => ({ ...prev, [platform]: false }))
+    if (!user) {
+      alert('Please log in first')
+      return
+    }
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+      const response = await fetch(`${apiUrl}/api/connections/${platform}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ user_id: user.id })
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        // Update local state to remove the connection
+        setConnections(prev => ({ ...prev, [platform]: null }))
+        console.log(`Successfully disconnected ${platform}`)
+      } else {
+        alert(`Failed to disconnect ${platform}: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Failed to disconnect:', error)
+      alert(`Failed to disconnect ${platform}`)
+    }
   }
 
   const connectedCount = Object.values(connections).filter(Boolean).length
@@ -282,16 +401,22 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {PLATFORMS.map(platform => (
-                  <PlatformCard
-                    key={platform.id}
-                    platform={platform}
-                    isConnected={platform.isConnected || false}
-                    onConnect={() => handleConnect(platform.id)}
-                    onDisconnect={() => handleDisconnect(platform.id)}
-                    lastSynced={platform.lastSynced}
-                  />
-                ))}
+                {PLATFORMS.map(platform => {
+                  const connection = connections[platform.id]
+                  const isConnected = !!connection
+                  const lastSynced = connection?.last_refresh_at ? new Date(connection.last_refresh_at) : undefined
+
+                  return (
+                    <PlatformCard
+                      key={platform.id}
+                      platform={platform}
+                      isConnected={isConnected}
+                      onConnect={() => handleConnect(platform.id)}
+                      onDisconnect={() => handleDisconnect(platform.id)}
+                      lastSynced={lastSynced}
+                    />
+                  )
+                })}
               </div>
             </div>
 

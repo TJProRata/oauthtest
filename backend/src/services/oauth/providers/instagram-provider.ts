@@ -3,7 +3,7 @@ import { InstagramPost, OAuthConfig } from '@creator-ai-hub/shared';
 import axios from 'axios';
 
 export class InstagramProvider extends BaseOAuthProvider {
-  private readonly baseApiUrl = 'https://graph.instagram.com';
+  private readonly baseApiUrl = 'https://graph.instagram.com/v23.0';
 
   constructor(config: OAuthConfig) {
     super('instagram', config);
@@ -35,7 +35,7 @@ export class InstagramProvider extends BaseOAuthProvider {
 
       // Exchange for long-lived token
       const longTokenResponse = await axios.get(
-        `${this.baseApiUrl}/access_token`,
+        'https://graph.instagram.com/access_token',
         {
           params: {
             grant_type: 'ig_exchange_token',
@@ -63,7 +63,7 @@ export class InstagramProvider extends BaseOAuthProvider {
   public async refreshAccessToken(accessToken: string): Promise<TokenSet> {
     try {
       const response = await axios.get(
-        `${this.baseApiUrl}/refresh_access_token`,
+        'https://graph.instagram.com/refresh_access_token',
         {
           params: {
             grant_type: 'ig_refresh_token',
@@ -86,25 +86,31 @@ export class InstagramProvider extends BaseOAuthProvider {
 
   /**
    * Get Instagram user profile
+   * Uses the Instagram Business API endpoint
    */
   public async getUserProfile(accessToken: string): Promise<any> {
     try {
+      // Use the /me endpoint with user_id and username fields for Business accounts
       const response = await axios.get(`${this.baseApiUrl}/me`, {
         params: {
-          fields: 'id,username,account_type,media_count',
+          fields: 'user_id,username,account_type,media_count',
           access_token: accessToken
         }
       });
 
       return {
-        id: response.data.id,
+        id: response.data.user_id || response.data.id,
         username: response.data.username,
-        accountType: response.data.account_type,
+        accountType: response.data.account_type || 'business',
         mediaCount: response.data.media_count
       };
     } catch (error: any) {
+      // Handle new API error format
+      const errorMessage = error.response?.data?.error?.message ||
+                          error.response?.data?.error_message ||
+                          error.message;
       throw new Error(
-        `Failed to fetch Instagram profile: ${error.response?.data?.error?.message || error.message}`
+        `Failed to fetch Instagram profile: ${errorMessage}. Note: Only Instagram Business or Creator accounts are supported.`
       );
     }
   }

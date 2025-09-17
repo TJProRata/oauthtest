@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, ChevronUp, Check, Link2, LinkOff, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronUp, Check, Link2, Unlink, RefreshCw } from 'lucide-react'
 import { OAuthPlatform } from '@creator-ai-hub/shared'
 
 interface PlatformCardProps {
@@ -126,7 +126,7 @@ export function PlatformCard({
             </>
           ) : isConnected ? (
             <>
-              <LinkOff className="h-5 w-5" />
+              <Unlink className="h-5 w-5" />
               <span>Disconnect</span>
             </>
           ) : (

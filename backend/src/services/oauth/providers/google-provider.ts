@@ -16,21 +16,20 @@ export class GoogleProvider extends BaseOAuthProvider {
    */
   public async getUserProfile(accessToken: string): Promise<any> {
     try {
-      const response = await axios.get(`${this.peopleApiUrl}/people/me`, {
+      // Use OAuth2 userinfo endpoint instead of People API
+      // This doesn't require enabling any additional APIs
+      const response = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: {
           Authorization: `Bearer ${accessToken}`
-        },
-        params: {
-          personFields: 'names,emailAddresses,photos'
         }
       });
 
       const profile = response.data;
       return {
-        id: profile.resourceName,
-        email: profile.emailAddresses?.[0]?.value,
-        displayName: profile.names?.[0]?.displayName,
-        profilePicture: profile.photos?.[0]?.url
+        id: profile.sub || profile.id,
+        email: profile.email,
+        displayName: profile.name,
+        profilePicture: profile.picture
       };
     } catch (error: any) {
       throw new Error(

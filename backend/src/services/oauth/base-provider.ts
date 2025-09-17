@@ -175,6 +175,25 @@ export abstract class BaseOAuthProvider {
   }
 
   /**
+   * Get authorization URL for OAuth flow (wrapper for backend compatibility)
+   */
+  public getAuthorizationUrl(userId: string): string {
+    const params: AuthorizationParams = {
+      state: userId, // Use userId as state for simplicity
+      codeVerifier: this.config.usePKCE ? BaseOAuthProvider.generateCodeVerifier() : undefined,
+      codeChallenge: undefined as string | undefined
+    };
+
+    if (params.codeVerifier) {
+      params.codeChallenge = BaseOAuthProvider.generateCodeChallenge(params.codeVerifier);
+      // Store codeVerifier for later use in token exchange
+      // In production, this should be stored in a session or cache with the userId
+    }
+
+    return this.generateAuthorizationUrl(params);
+  }
+
+  /**
    * Get user profile from OAuth provider
    */
   public abstract getUserProfile(accessToken: string): Promise<any>;
